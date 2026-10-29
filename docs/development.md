@@ -23,10 +23,10 @@ Nothing like this exists from either vendor: MagicQ only imports MVR patches and
 ## Workflow, MagicQ to grandMA3
 
 1. `python3 convert_to_ma3.py show.shw out/show-ma3` reads the `.shw` (`magicq/reader.py`), writes `out/show-ma3/show.json`, `fixturetypes/*.gdtf` (`ma3/gdtf.py`) and `report.md`; `ma3/libmatch.py` adds grandMA3 library candidates per head. `--no-library` skips the candidates, `--install` copies the GDTFs into `~/MALightingTechnology/gma3_library/fixturetypes`.
-2. In grandMA3 onPC, new empty show: `Lua "dofile('<repo>/ma3/import_show.lua')('<repo>/out/show-ma3')"`, or `python3 scripts/ma3_import.py out/show-ma3` with OSC input enabled (Menu > In & Out > OSC, Enable Input, port 8000 line with Receive Command = Yes). `result.json` and `progress.log` land in the package folder.
+2. In grandMA3 onPC, new empty show: `Lua "dofile('<repo>/ma3/import_show.lua')('<repo>/out/show-ma3')"`, or `python3 scripts/ma3_import.py out/show-ma3`, which drives onPC itself: over OSC when the show has OSC input on (Menu > In & Out > OSC, Enable Input, port 8000 line with Receive Command = Yes), otherwise through the onPC web remote on port 8080 with a headless Chrome (`scripts/ma3_web.py`, needs dev-browser). `result.json` and `progress.log` land in the package folder.
 3. Save the show in grandMA3.
 
-`scripts/lua_dryrun.lua PACKAGE_DIR` runs the plugin outside grandMA3 with API stubs and writes every command it would send to `dryrun_commands.txt` (needs a `lua` interpreter).
+`scripts/lua_dryrun.lua PACKAGE_DIR` runs the plugin outside grandMA3 with API stubs and writes every command it would send to `dryrun_commands.txt` (needs a `lua` interpreter). `scripts/ma3_compare.py PACKAGE_DIR SHOW.shw` plays every imported cue in onPC with zero fade, reads the DMX back and compares it with the cue values in the `.shw`; because onPC 2.3.2 stops answering `GetDMXValue` once universe 1 is patched, convert the package for that check with `--universe-offset 1`.
 
 ## How it works
 
@@ -40,7 +40,7 @@ Nothing like this exists from either vendor: MagicQ only imports MVR patches and
 
 Verified with MagicQ PC 1.9.7.4 on this Mac: generated shows with generated heads (1 and 52 channels), patch on two universes, groups, the four palette kinds, cues with values and millisecond fade and delay times, multi-cue stacks, a page and playbacks all load and come back from MagicQ unchanged apart from fields it derives itself.
 
-MagicQ to grandMA3 (added later the same day): the reader handles the three real sample shows and round-trips the demo show; packages and GDTFs are generated and reload as the same heads; the Lua plugin is syntax-checked and dry-run with stubs, not yet run inside onPC (see `docs/ma3-import.md` for the six points to confirm).
+MagicQ to grandMA3 (same day, evening): verified inside grandMA3 onPC 2.3.2. The demo show imports in under 4 seconds and every cue value grandMA3 outputs equals the MagicQ value (13 of 13, `scripts/ma3_compare.py`). The real MQ50 show (48 heads, 23 groups, 75 palettes, 60 stacks, 68 cues) imports in 18 seconds and all 1323 cue values come out equal; only the grandMA2 library candidates are still skipped by onPC ("Illegal object" until its library scan has run), so those heads use the generated fixture types. What was learned on the way (command spellings, the edit-patch handle rule, the universe 1 read-back quirk, two onPC crashes and their causes) is in `docs/ma3-import.md`.
 
 Not yet run against a real grandMA3 show: `dump_show.lua` is written against the documented Lua API and syntax-checked, but the first real run in onPC will show which property names differ. Driving onPC from this machine needs the Terminal app granted Accessibility (System Settings > Privacy & Security > Accessibility); without it a person has to start the plugin.
 

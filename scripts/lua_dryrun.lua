@@ -19,18 +19,25 @@ end
 local function fakeFT(name)
   return { Name = name, DMXModes = { Children = function() return { fakeMode("Mode 1", 1) } end } }
 end
-local fixtures = {}
-Patch = function()
+local fixtures = { { Name = "Univ", Patch = "" } }
+local function patchObj()
   return {
     FixtureTypes = { Children = function() return ftList end, Count = function() return #ftList end },
-    Stages = { { Fixtures = { Count = function() return #fixtures end } } },
+    Stages = { { Fixtures = { Children = function() return fixtures end, Count = function() return #fixtures end } } },
   }
 end
+Patch = patchObj
+Root = function() return { ShowData = { Patch = patchObj(), LivePatch = patchObj() } } end
+HandleToStr = function(h) return "#1234" end
 -- every Import Library command creates a fixture type
 local realCmd = Cmd
 Cmd = function(c)
   if c:match("^Import Library") or c:match("^Import FixtureType") then ftList[#ftList + 1] = fakeFT("FT" .. (#ftList + 1)) end
-  if c:match("^Delete FixtureType") then ftList[#ftList] = nil end
+  if c:match("^Delete %d+") then ftList[#ftList] = nil end
+  local n = c:match("^Store (%d+) /NC$")
+  if n then fixtures[tonumber(n)] = { Name = "", Patch = "" } end
+  local pn, pv = c:match("^Set (%d+) Property 'Patch' \"([^\"]*)\"")
+  if pn then fixtures[tonumber(pn)].Patch = pv end
   return realCmd(c)
 end
 AddFixtures = function(t) fixtures[#fixtures + 1] = t return true end

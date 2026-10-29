@@ -107,6 +107,8 @@ def test_lua_dry_run(package):
     assert res["counts"] == {"cues": 3, "executors": 3, "fixture_types": 2, "fixtures": 4, "groups": 2, "presets": 4, "sequences": 2}
     with open(os.path.join(out, "dryrun_commands.txt"), encoding="utf-8") as fh:
         cmds = fh.read().splitlines()
-    assert 'Fixture 101 + 102 Attribute "Pan" At Absolute Decimal16 32768' in cmds
+    pairs = list(zip(cmds, cmds[1:]))
+    assert ("Fixture 101 + 102", 'Attribute "Pan" At Absolute Decimal16 32768') in pairs
     assert "Store Sequence 1 Cue 2 /NC" in cmds
+    assert "Set 4 Property 'Patch' \"2.001\"" in cmds
     assert 'Set Sequence 1 Cue 1 Property "CueFade" 2' in cmds

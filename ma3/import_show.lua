@@ -10,7 +10,7 @@
 -- plus the documented Lua AddFixtures(); nothing is written into the show file
 -- directly, so the result is a normal show you save from grandMA3.
 
-local VERSION = "0.1"
+local VERSION = "0.2"
 
 -- ---------------------------------------------------------------------------
 -- small JSON reader (objects -> tables with string keys, arrays -> 1-based)
@@ -164,6 +164,7 @@ end
 
 local function fmtnum(x)
   if x == nil then return "0" end
+  if type(x) ~= "number" then return tostring(x) end
   if math.type and math.type(x) == "integer" then return tostring(x) end
   if x == math.floor(x) then return string.format("%d", x) end
   return (string.format("%.3f", x):gsub("0+$", ""):gsub("%.$", ""))
@@ -204,6 +205,11 @@ return function(dir)
     pcall(Printf, "[mq2ma3] " .. msg)
     local f = io.open(LOG, "a")
     if f then f:write(msg, "\n") f:close() end
+  end
+
+  local function dmxCheck(label)
+    local ok, v = pcall(GetDMXValue, 1)
+    log("dmx read-back after %s: %s", label, ok and tostring(v) or ("error " .. tostring(v)))
   end
 
   local function finish()
@@ -256,6 +262,8 @@ return function(dir)
   log("package %s: %d heads, %d fixtures, %d groups, %d presets, %d sequences", show.name or "?",
       #(show.heads or {}), #(show.fixtures or {}), #(show.groups or {}), #(show.presets or {}), #(show.sequences or {}))
 
+  local okBody, errBody = pcall(function()
+
   local HOME = os.getenv("HOME") or ""
   local userFixtures = nil
   pcall(function() userFixtures = GetPath(Enums.PathType.UserFixtures) end)
@@ -279,24 +287,39 @@ return function(dir)
     return "beam"
   end
 
-  local ftypes = Patch().FixtureTypes
+  -- the edit patch (ShowData.Patch) is where imports and patching happen; the live patch follows on "cd Root"
+  local function editFT() return Root().ShowData.Patch.FixtureTypes end
+  local function editFixtures() return Root().ShowData.Patch.Stages[1].Fixtures end
+  local function ftNames(pool)
+    local t = {}
+    for _, ft in ipairs(children(pool)) do t[#t + 1] = tostring(prop(ft, "Name")) end
+    return t
+  end
+  -- One edit-patch session for imports and patching: leaving it ("cd Root") commits the patch and
+  -- invalidates every handle taken inside it, so handles are never kept across a "cd Root".
+  local inPatch = false
+  local function enterPatch()
+    if inPatch then return end
+    pcall(Cmd, "cd Root")
+    pcall(Cmd, "cd 'ShowData'.'Patch'")
+    inPatch = true
+  end
+  local function leavePatch()
+    pcall(Cmd, "cd Root")
+    inPatch = false
+  end
 
   -- describe a fixture type's DMX modes: {{handle=, name=, footprint=, chans={[offset]={fam=, bytes=}}}, ...}
   local function describeModes(ft)
     local modes = {}
     for _, mode in ipairs(children(prop(ft, "DMXModes") or {})) do
       local info = { handle = mode, name = tostring(prop(mode, "Name") or ""), footprint = 0, chans = {} }
-      local dchs = prop(mode, "DMXChannels")
-      for _, dch in ipairs(children(dchs or {})) do
+      for _, dch in ipairs(children(prop(mode, "DMXChannels") or {})) do
         local coarse = tonumber(prop(dch, "Coarse")) or 0
         local fine = tonumber(prop(dch, "Fine")) or 0
         local ultra = tonumber(prop(dch, "Ultra")) or 0
-        local attr = nil
         local lcs = children(dch)
-        if #lcs > 0 then attr = prop(lcs[1], "Attribute") end
-        if attr == nil then attr = prop(dch, "Attribute") end
-        attr = tostring(attr or "")
-        -- "Attribute" may come back as a handle address; keep the last path element
+        local attr = tostring((lcs[1] and prop(lcs[1], "Attribute")) or prop(dch, "Attribute") or "")
         attr = attr:match("([%w_]+)$") or attr
         local bytes = (fine > 0 and 2 or 1)
         if ultra > 0 then bytes = 3 end
@@ -322,46 +345,52 @@ return function(dir)
     return true
   end
 
-  local function lastFixtureType()
-    local list = children(ftypes)
-    return list[#list]
+  local libraryScanned = {}
+  -- import one library file into the fixture type pool; returns (handle, index) of the new type or nil
+  local function importLibrary(source, file)
+    local before = #ftNames(editFT())
+    local name = file:gsub("%.pxml$", ""):gsub("%.xml$", "")
+    local src = (source == "grandma2") and "grandMA2" or ((source == "grandma3") and "grandMA3" or "User")
+    local lib = (source == "user") and file or name
+    enterPatch()
+    cmd('Set "FixtureTypes" Source="%s"', src)
+    pcall(Cmd, "cd 'FixtureTypes'")
+    if source ~= "user" and not libraryScanned[src] then
+      -- the shipped libraries are scanned on first use; give the scan a moment (Call Library toggles, so once only)
+      pcall(Cmd, "Call Library")
+      local t0 = os.clock()
+      while os.clock() - t0 < 1.5 do end
+      libraryScanned[src] = true
+    end
+    local okI = cmd('Import Library %s', q(lib))
+    if not okI or #ftNames(editFT()) == before then
+      local t0 = os.clock()
+      while os.clock() - t0 < 1.0 do end
+      cmd('Import Library %s', q(lib))
+    end
+    pcall(Cmd, "cd Root 'ShowData'.'Patch'")
+    local after = ftNames(editFT())
+    if #after > before then
+      return children(editFT())[#after], #after
+    end
+    return nil
   end
 
-  -- import one library file into the FixtureTypes pool; returns the new handle or nil
-  local function importLibrary(source, file)
-    local before = count(ftypes)
-    local name = file:gsub("%.pxml$", ""):gsub("%.gdtf$", ""):gsub("%.xml$", "")
-    local variants
-    if source == "grandma2" then
-      variants = {
-        string.format('ChangeDestination Root "ShowData"."Patch"; Set "FixtureTypes" Source="grandMA2"; ChangeDestination "FixtureTypes"; Import Library %s /NC', q(name)),
-        string.format('Import FixtureType Library %s /NC', q(name)),
-        string.format('Import FixtureType Library %s /Type "grandMA2" /NC', q(file)),
-      }
-    elseif source == "grandma3" then
-      variants = {
-        string.format('ChangeDestination Root "ShowData"."Patch"; Set "FixtureTypes" Source="grandMA3"; ChangeDestination "FixtureTypes"; Import Library %s /NC', q(name)),
-        string.format('Import FixtureType Library %s /NC', q(name)),
-      }
-    else -- user folder: GDTF or MA3 XML
-      variants = {
-        string.format('ChangeDestination Root "ShowData"."Patch"; Set "FixtureTypes" Source="User"; ChangeDestination "FixtureTypes"; Import Library %s /NC', q(file)),
-        string.format('ChangeDestination Root "ShowData"."Patch"; Set "FixtureTypes" Source="User"; ChangeDestination "FixtureTypes"; Import Library %s /NC', q(name)),
-        string.format('Import FixtureType Library %s /NC', q(file)),
-        string.format('Import FixtureType Library %s /Path %s /NC', q(file), q(userFixtures)),
-      }
-    end
-    for _, c in ipairs(variants) do
-      for sub in (c .. ";"):gmatch("([^;]+);") do
-        pcall(Cmd, (sub:gsub("^%s+", "")))
-      end
-      if count(ftypes) > before then
-        pcall(Cmd, "ChangeDestination Root")
-        return lastFixtureType(), c
-      end
-    end
-    pcall(Cmd, "ChangeDestination Root")
-    return nil
+  local function renameFixtureType(idx, name)
+    enterPatch()
+    pcall(Cmd, "cd 'FixtureTypes'")
+    cmd("Set %d Property 'Name' %s", idx, q(name))
+    pcall(Cmd, "cd Root 'ShowData'.'Patch'")
+  end
+
+  local function deleteFixtureType(idx)
+    enterPatch()
+    local before = #ftNames(editFT())
+    pcall(Cmd, "cd 'FixtureTypes'")
+    pcall(Cmd, string.format("Delete %d /NC", idx))
+    if #ftNames(editFT()) == before then pcall(Cmd, string.format("Delete FixtureType %d /NC", idx)) end
+    pcall(Cmd, "cd Root 'ShowData'.'Patch'")
+    return #ftNames(editFT()) < before
   end
 
   local headMode = {}      -- head key -> {ft=, mode=, source=}
@@ -370,14 +399,14 @@ return function(dir)
     for _, cand in ipairs(head.candidates or {}) do
       local source, file = cand:match("^(%w+):(.+)$")
       if source then
-        local ft, how = importLibrary(source, file)
+        local ft, ftIndex = importLibrary(source, file)
         if ft then
           local modes = describeModes(ft)
           local why = {}
           for _, info in ipairs(modes) do
             local okm, reason = modeMatches(info, head)
             if okm then
-              chosen = { ft = ft, mode = info.handle, modeName = info.name, source = cand }
+              chosen = { ftIndex = ftIndex, modeName = info.name, source = cand }
               break
             end
             why[#why + 1] = info.name .. ": " .. tostring(reason)
@@ -386,9 +415,8 @@ return function(dir)
             log("head %s: library %s mode '%s' matches channel for channel", head.key, cand, chosen.modeName)
             break
           end
-          log("head %s: library %s does not line up (%s), removed", head.key, cand, table.concat(why, "; "))
-          local idx = count(ftypes)
-          cmd('Delete FixtureType %d /NC', idx)
+          local removed = deleteFixtureType(ftIndex)
+          log("head %s: library %s does not line up (%s)%s", head.key, cand, table.concat(why, "; "), removed and ", removed" or ", left in the pool")
         else
           log("head %s: could not import library candidate %s", head.key, cand)
         end
@@ -403,15 +431,16 @@ return function(dir)
         os.execute(string.format('cp "%s" "%s"', src, dst))
       end
       pcall(RefreshLibrary)
-      local ft, how = importLibrary("user", head.gdtf)
+      local ft, ftIndex = importLibrary("user", head.gdtf)
       if ft then
         local modes = describeModes(ft)
         local mode = modes[1]
         for _, info in ipairs(modes) do
           if info.name == head.mode_name then mode = info end
         end
-        chosen = { ft = ft, mode = mode and mode.handle, modeName = mode and mode.name or "", source = "generated " .. head.gdtf }
-        log("head %s: generated GDTF imported (%s)", head.key, tostring(how))
+        chosen = { ftIndex = ftIndex, modeName = mode and mode.name or "", source = "generated " .. head.gdtf }
+        renameFixtureType(ftIndex, "MQ " .. head.key)
+        log("head %s: generated GDTF imported as fixture type %d", head.key, ftIndex)
       else
         log("head %s: GDTF import failed, fixtures of this head skipped", head.key)
         result.failed[#result.failed + 1] = { cmd = "import " .. head.gdtf, err = "no fixture type appeared" }
@@ -420,44 +449,59 @@ return function(dir)
     headMode[head.key] = chosen
     result.info[#result.info + 1] = { head = head.key, source = chosen and chosen.source or "none", mode = chosen and chosen.modeName or "" }
   end
-  result.counts.fixture_types = count(ftypes)
+  result.counts.fixture_types = #ftNames(editFT())
+  dmxCheck("fixture types")
 
   -- --------------------------------------------------------------- fixtures
+  -- the recipe MA's own system tests use: Store an entry in Stage 1, assign the type, set the properties
   local patched = 0
   local fidOk = {}
-  pcall(Cmd, 'ChangeDestination Root "ShowData"."Patch"')
-  pcall(Cmd, 'ChangeDestination "Stages"."Stage 1"."Fixtures"')
+  enterPatch()
+  local function modeHandle(ftIndex, modeName)
+    local ft = children(editFT())[ftIndex]
+    if not ft then return nil end
+    local modes = children(prop(ft, "DMXModes") or {})
+    for _, m in ipairs(modes) do
+      if tostring(prop(m, "Name")) == modeName then return m end
+    end
+    return modes[1]
+  end
+  pcall(Cmd, "cd 'Stages'.'Stage 1'.'Fixtures'")
+  local nextIndex = #children(editFixtures()) + 1
   for _, fx in ipairs(show.fixtures or {}) do
     local hm = headMode[fx.head]
-    if hm and hm.mode then
-      local okAdd = false
-      local okp, err = pcall(function()
-        okAdd = AddFixtures({ mode = hm.mode, amount = 1, fid = tostring(fx.fid), name = tostring(fx.name or ""),
-                              patch = { tostring(fx.patch) }, undo = "mq2ma3 patch" })
-      end)
-      if not okp then
-        log("fixture %s: AddFixtures error %s", tostring(fx.fid), tostring(err))
-      end
-      if okAdd then
-        patched = patched + 1
-        fidOk[fx.fid] = true
-      else
-        -- command line fallback (the recipe MA's own system tests use)
-        local n = count(Patch().Stages[1].Fixtures) + 1
-        local a1 = cmd('Store %d /NC', n)
-        local ftName = tostring(prop(hm.ft, "Name") or "")
-        cmd('Assign FixtureType %s At %d', q(ftName), n)
-        cmd('Set %d Property "FID" %s', n, tostring(fx.fid))
-        cmd('Set %d Property "Name" %s', n, q(fx.name or ""))
-        if hm.modeName ~= "" then cmd('Set %d Property "Mode" %s', n, q(hm.modeName)) end
-        cmd('Set %d Property "Patch" %s', n, q(fx.patch))
-        if a1 then patched = patched + 1 fidOk[fx.fid] = true end
+    if hm then
+      local n = nextIndex
+      local okStore = cmd('Store %d /NC', n)
+      if okStore then
+        nextIndex = nextIndex + 1
+        cmd("Assign FixtureType %d At %d", hm.ftIndex, n)
+        cmd("Set %d Property 'FID' %s", n, tostring(fx.fid))
+        cmd("Set %d Property 'Name' %s", n, q(fx.name or ""))
+        local mh = modeHandle(hm.ftIndex, hm.modeName)
+        local okH, hs = pcall(HandleToStr, mh)
+        if mh and okH and hs then cmd("Set %d Property 'Mode' '%s'", n, tostring(hs)) end
+        cmd("Set %d Property 'Patch' %s", n, q(fx.patch))
+        local e = children(editFixtures())[n]
+        if e and tostring(prop(e, "Patch")) ~= "" then
+          patched = patched + 1
+          fidOk[fx.fid] = true
+        else
+          log("fixture %s %s: not patched (%s)", tostring(fx.fid), tostring(fx.name), e and tostring(prop(e, "Patch")) or "no entry")
+          result.failed[#result.failed + 1] = { cmd = "patch " .. tostring(fx.fid), err = "address " .. tostring(fx.patch) .. " not accepted" }
+        end
       end
     end
   end
-  pcall(Cmd, "ChangeDestination Root")
+  leavePatch()
+  -- the live patch takes a moment to follow
+  local t1 = os.clock()
+  while os.clock() - t1 < 15 do
+    if #children(Patch().Stages[1].Fixtures) >= nextIndex - 1 then break end
+  end
   result.counts.fixtures = patched
   log("patched %d of %d fixtures", patched, #(show.fixtures or {}))
+  dmxCheck("patch")
 
   -- selection string for a list of fids
   local function sel(fids)
@@ -482,6 +526,7 @@ return function(dir)
   end
   cmd("ClearAll")
   result.counts.groups = groups
+  dmxCheck("groups")
 
   -- ------------------------------------------------------------ programmer
   -- bytes per (fid, attr) from the head description
@@ -514,7 +559,8 @@ return function(dir)
         local readout = bytes == 2 and "Decimal16" or "Decimal8"
         local s = sel(fids)
         if s then
-          cmd('%s Attribute %s At Absolute %s %d', s, q(attr), readout, v)
+          cmd(s)
+          cmd('Attribute %s At Absolute %s %d', q(attr), readout, v)
           n = n + 1
         end
       end
@@ -536,6 +582,7 @@ return function(dir)
   end
   cmd("ClearAll")
   result.counts.presets = presets
+  dmxCheck("presets")
 
   -- --------------------------------------------------------------- sequences
   local famOfGroup = { Dimmer = "int", Position = "pos", Color = "col" }
@@ -571,8 +618,9 @@ return function(dir)
       -- preset references first, hard values on top
       for fid, list in pairs(c.presets or {}) do
         if fidOk[tonumber(fid)] then
+          cmd('Fixture %s', fid)
           for _, ref in ipairs(list) do
-            cmd('Fixture %s At Preset %s', fid, ref)
+            cmd('At Preset %s', ref)
           end
         end
       end
@@ -653,8 +701,16 @@ return function(dir)
     end
   end
   result.counts.executors = execs
+  dmxCheck("executors")
 
   cmd("ClearAll")
   pcall(Cmd, "Page 1")
+  end)
+  if not okBody then
+    log("plugin error: %s", tostring(errBody))
+    result.failed[#result.failed + 1] = { cmd = "plugin", err = tostring(errBody) }
+    pcall(Cmd, "cd Root")
+    pcall(Cmd, "ClearAll")
+  end
   finish()
 end

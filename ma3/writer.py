@@ -17,16 +17,19 @@ EXEC_FADER_BASE = 200   # MagicQ playback 1 -> executor 201 (first fader row)
 EXEC_KEY_BASE = 100     # groups and palettes on playbacks -> 101..
 
 
-def fixture_patch(fx) -> str:
-    return f"{fx.universe}.{fx.address:03d}"
+def fixture_patch(fx, universe_offset: int = 0) -> str:
+    return f"{fx.universe + universe_offset}.{fx.address:03d}"
 
 
 class Package:
-    def __init__(self, show: Show, out_dir: str, match_library: bool = True):
+    def __init__(self, show: Show, out_dir: str, match_library: bool = True, universe_offset: int = 0):
         self.show = show
         self.out = out_dir
         self.notes = list(show.report)
         self.match = match_library
+        self.universe_offset = universe_offset
+        if universe_offset:
+            self.notes.append(f"all DMX addresses shifted by {universe_offset} universe(s) (--universe-offset)")
         self.gheads: dict[str, gdtf.GHead] = {}
         self.preset_map: dict[tuple[str, int], list[dict]] = {}   # palette ref -> presets built from it
         self.fid_head: dict[int, gdtf.GHead] = {}
@@ -56,7 +59,7 @@ class Package:
 
     # -------------------------------------------------------------- fixtures
     def build_fixtures(self) -> list[dict]:
-        return [{"fid": fx.fid, "name": fx.name, "head": fx.head.key, "patch": fixture_patch(fx),
+        return [{"fid": fx.fid, "name": fx.name, "head": fx.head.key, "patch": fixture_patch(fx, self.universe_offset),
                  "pos": list(fx.pos), "rot": list(fx.rot)} for fx in self.show.fixtures]
 
     # ---------------------------------------------------------------- values
@@ -74,7 +77,8 @@ class Package:
                 coarse = offs.get(gc.offset)
                 fine = offs.get(gc.fine, 0)
                 if coarse is None:
-                    continue  # only the fine byte: not a value we can place
+                    # MagicQ recorded only the fine byte; the coarse byte stays at the head's default
+                    coarse = gh.head.channels[gc.offset].default & 0xff
                 out[gc.attr] = (coarse << 8) | fine
             else:
                 out[gc.attr] = v
@@ -195,6 +199,7 @@ class Package:
         data = OrderedDict()
         data["name"] = self.show.name
         data["generator"] = "ma3-to-magicq (MagicQ to grandMA3)"
+        data["universe_offset"] = self.universe_offset
         data["heads"] = self.build_heads()
         data["fixtures"] = self.build_fixtures()
         data["groups"] = [{"no": i + 1, "name": g.name, "fids": g.members} for i, g in enumerate(self.show.groups)]
@@ -235,5 +240,5 @@ class Package:
             fh.write("\n".join(lines))
 
 
-def write_package(show: Show, out_dir: str, match_library: bool = True) -> dict:
-    return Package(show, out_dir, match_library).write()
+def write_package(show: Show, out_dir: str, match_library: bool = True, universe_offset: int = 0) -> dict:
+    return Package(show, out_dir, match_library, universe_offset).write()

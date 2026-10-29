@@ -89,7 +89,7 @@ GROUP_POOL = {"Dimmer": 1, "Position": 2, "Gobo": 3, "Color": 4, "Beam": 5, "Foc
 
 # alternatives when one head maps two channels to the same MA3 attribute
 SPARES = {
-    "Dimmer": ["Dimmer", "HSB_Brightness", "VideoBrightness"],
+    "Dimmer": [],   # a second dimmer channel gets a custom "Dimmer_2" attribute: HSB_Brightness would drive the RGB engine
     "Position": ["PositionEffect", "PositionEffectRate", "PositionEffectFade", "XYZ_X", "XYZ_Y", "XYZ_Z"],
     "Gobo": ["Gobo1WheelSpin", "Gobo2WheelSpin", "Gobo1WheelShake", "Gobo2WheelShake", "Gobo3WheelSpin", "Gobo3PosRotate"],
     "Color": ["Color3", "Color4", "ColorRGB_GC", "ColorRGB_BC", "ColorRGB_BM", "ColorRGB_RM", "Tint", "ColorMacro2"],

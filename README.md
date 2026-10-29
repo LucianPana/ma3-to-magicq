@@ -9,7 +9,7 @@ You programmed the show on one desk. The venue has the other. Until now that mea
 
 No manufacturer offers this. Both file formats are undocumented. This project figured out the MagicQ one and uses the grandMA3's own scripting for the other.
 
-> **Status: experimental.** The MagicQ side works on test shows against MagicQ PC and the MagicQ reader has been run on real MQ50 shows. Neither direction has yet been run inside a real grandMA3 session, and both will need corrections when they are. If you try it, tell us what happened, good or bad.
+> **Status: experimental.** grandMA3 to MagicQ works on test shows against MagicQ PC and has not yet been run on a real grandMA3 show. MagicQ to grandMA3 has been run inside grandMA3 onPC 2.3.2 on a test show (every cue value came out identical) and on a real MQ50 show. Both directions will need corrections as more real shows go through. If you try it, tell us what happened, good or bad.
 
 ## What comes across
 
@@ -67,7 +67,7 @@ You get a folder `myshow-ma3` with `show.json`, one generated GDTF fixture type 
 Lua "dofile('<path to this folder>/ma3/import_show.lua')('<path to>/myshow-ma3')"
 ```
 
-The plugin imports the fixture types, patches, and stores groups, presets, cues and executors with ordinary commands. It writes `progress.log` and `result.json` into the folder so you can see what it did and what the console refused. With OSC input enabled in onPC, `python3 scripts/ma3_import.py myshow-ma3` runs this step for you.
+The plugin imports the fixture types, patches, and stores groups, presets, cues and executors with ordinary commands. It writes `progress.log` and `result.json` into the folder so you can see what it did and what the console refused. `python3 scripts/ma3_import.py myshow-ma3` can run this step for you from the terminal (through OSC, or through the onPC web remote).
 
 **3. Save the show** in grandMA3. Read the report next to it.
 
@@ -83,7 +83,7 @@ Small venues, rental houses, schools, churches and freelancers who get a grandMA
 
 - Run it on your show and open an issue with the report and what the MagicQ showed. The first real shows will teach the tool the most.
 - Attribute mappings for fixture types that come out odd live in `data/gdtf_to_magicq.csv`, one line per attribute, easy to fix.
-- The MagicQ to grandMA3 direction needs its first run inside onPC: `docs/ma3-import.md` lists the six things to confirm. A run log from a real session is worth a lot.
+- The MagicQ to grandMA3 direction has run on one real MQ50 show so far; `docs/ma3-import.md` has what was learned. Run logs from other shows are worth a lot.
 - Other desks are possible on the same core. Say so if you want them.
 
 Technical details, how the pieces fit and how to develop: `docs/development.md`. MIT licence.

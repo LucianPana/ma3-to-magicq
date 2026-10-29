@@ -17,21 +17,51 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import ma3_osc  # noqa: E402
+import ma3_web  # noqa: E402
+
+MARKER = os.path.expanduser("~/.ma3_osc_ping")
 
 
-def ping(timeout: float = 3.0) -> bool:
-    """True when onPC executes our OSC commands (it writes a marker file)."""
-    marker = os.path.expanduser("~/.ma3_osc_ping")
-    if os.path.exists(marker):
-        os.remove(marker)
-    ma3_osc.send([f"Lua \"local f=io.open('{marker}','w') if f then f:write('ok') f:close() end\""])
+def _wait_marker(timeout: float) -> bool:
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if os.path.exists(marker):
-            os.remove(marker)
+        if os.path.exists(MARKER):
+            os.remove(MARKER)
             return True
         time.sleep(0.1)
     return False
+
+
+def ping(timeout: float = 3.0, transport: str = "osc") -> bool:
+    """True when onPC executes our commands over the given transport (it writes a marker file)."""
+    if os.path.exists(MARKER):
+        os.remove(MARKER)
+    cmd = f"Lua \"local f=io.open('{MARKER}','w') if f then f:write('ok') f:close() end\""
+    if transport == "osc":
+        ma3_osc.send([cmd])
+    else:
+        try:
+            ma3_web.send([cmd])
+        except RuntimeError as e:
+            print(f"web remote: {e}")
+            return False
+    return _wait_marker(timeout)
+
+
+def connect() -> str | None:
+    """Pick a transport: OSC when onPC answers on it, else the web remote."""
+    if ping(2.0, "osc"):
+        return "osc"
+    if ma3_web.available() and ping(8.0, "web"):
+        return "web"
+    return None
+
+
+def send(commands: list[str], transport: str):
+    if transport == "osc":
+        ma3_osc.send(commands)
+    else:
+        ma3_web.send(commands)
 
 
 def main(argv):
@@ -45,10 +75,13 @@ def main(argv):
     result = os.path.join(pkg, "result.json")
     if os.path.exists(result):
         os.remove(result)
-    if not ping():
-        print("onPC did not answer over OSC. Enable it: Menu > In & Out > OSC, Enable Input, port 8000 line with Receive Command = Yes.")
+    transport = connect()
+    if transport is None:
+        print("onPC did not answer, neither over OSC (Menu > In & Out > OSC, Enable Input, port 8000 line with "
+              "Receive Command = Yes) nor through the web remote on port 8080.")
         return 3
-    ma3_osc.send([f"Lua \"dofile('{lua}')('{pkg}')\""])
+    print(f"talking to onPC over {transport}")
+    send([f"Lua \"dofile('{lua}')('{pkg}')\""], transport)
     t0 = time.time()
     last = ""
     while time.time() - t0 < timeout:

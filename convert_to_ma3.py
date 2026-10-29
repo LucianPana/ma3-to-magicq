@@ -8,8 +8,11 @@ onPC with a new empty show:
 
     Lua "dofile('<this folder>/ma3/import_show.lua')('OUT_DIR')"
 
---no-library  do not look for grandMA3 library fixture types, always use the generated GDTFs
---install     also copy the GDTF files into ~/MALightingTechnology/gma3_library/fixturetypes
+--no-library           do not look for grandMA3 library fixture types, always use the generated GDTFs
+--install              also copy the GDTF files into ~/MALightingTechnology/gma3_library/fixturetypes
+--universe-offset N    patch everything N universes higher (grandMA3 onPC 2.3.2 stops answering
+                       GetDMXValue once anything is patched on universe 1, so the DMX comparison
+                       in scripts/ma3_compare.py needs the show shifted up by one)
 """
 import os
 import shutil
@@ -29,7 +32,8 @@ def main(argv):
         return 2
     shw, out = args[0], args[1]
     show = read_shw(shw)
-    data = writer.write_package(show, out, match_library="--no-library" not in argv)
+    offset = int(argv[argv.index("--universe-offset") + 1]) if "--universe-offset" in argv else 0
+    data = writer.write_package(show, out, match_library="--no-library" not in argv, universe_offset=offset)
     if "--install" in argv:
         os.makedirs(USER_FT, exist_ok=True)
         for h in data["heads"]:
