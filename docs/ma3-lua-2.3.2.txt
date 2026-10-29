@@ -1,0 +1,58 @@
+# grandMA3 2.3.2 Lua functions, extracted from app_gma3 strings (name(arguments) -> returns)
+KeyPopup(string:text) -> nothing
+ErrPrintf(string:formatted_command[ ,light_userdata:undo], ...) -> string:command_execution_result ('Ok', 'Syntax Error', 'Illegal Command', ...)
+HostOS(string:ostype) -> string:hosttype
+DevMode3d(string:devmode3d) -> string:version
+GetExecutor(integer:executor) -> light_userdata:executor, light_userdata:page
+ChannelTable(string:attribute_name or integer:attribute_index) -> table of ui_channel_index
+SelectionNext(integer:current_subfixture_index) -> integer:next_subfixture_index, integer:x, integer:y, integer:z
+GetSubfixture(integer:subfixture_index) -> light_userdata:subfixture
+GetUIChannels(integer:subfixture_index or light_userdata: subfixture_handle[, boolean:return_as_handles]) -> {integer:ui_channels} or {light_userdata:ui_channels}
+GetRTChannels(integer:fixture index or light_userdata: reference_to_fixture_object[, boolean:return_as_handles]) -> {integer:rt_channels} or {light_userdata:rt_channels}
+GetUIChannel(integer:ui_channel_index or light_userdata: subfixture_reference, integer:attribute_index or string:attribute_name) -> table:ui_channel_descriptor
+GetRTChannel(integer:rt_channel_index) -> table:rt_channel_descriptor
+GetAttributeByUIChannel(integer:ui channel index) -> light_userdata:reference_to_attribute
+FirstDmxModeFixture(light_userdata:dmxmode) -> light_userdata:fixture
+GetAttributeIndex(string:attribute_name) -> integer:attribute_index
+GetUIChannelIndex(integer:subfixture_index, integer:attribute_index) -> integer:ui_channel_index
+GetChannelFunctionIndex(integer:ui_channel_index, integer:attribute_index) -> integer:channel_function_index
+GetTokenName(string:short_name) -> string:full_name
+GetProgPhaser(integer:ui_channel_index, boolean:phaser_only) -> {['abs_preset'=light_userdata:handle], ['rel_preset'=light_userdata:handle], ['fade'=float:seconds], ['delay'=float:seconds], ['speed'=float:hz], ['phase'=float:degree], ['measure'=float:percent], ['gridpos'=integer:value], ['mask_active_phaser'=integer:bitmask], ['mask_active_value'=integer:bitmask], ['mask_individual'=integer:bitmask], {['channel_function'=integer:value], ['absolute'=float:percent], ['absolute_value'=integer:value], ['relative'=float:percent], ['accel'=float:percent[, 'accel_type'=integer:enum_value(Enums.SplineType)]], ['decel'=float:percent[, 'decel_type'=integer:enum_value(Enums.SplineType)]], ['trans'=float:percent], ['width'=float:percent], ['integrated'=light_userdata:preset_handle]}}
+GetProgPhaserValue(integer:ui_channel_index, integer:step) -> {['channel_function'=integer:value], ['absolute'=number:percent], ['absolute_value'=number:value], ['relative'=number:percent], ['accel'=number:percent[, 'accel_type'=integer:enum_value(Enums.SplineType)]], ['decel'=number:percent[, 'decel_type'=integer:enum_value(Enums.SplineType)]], ['trans'=number:percent], ['width'=number:percent], ['integrated'=light_userdata:preset_handle]}
+SetColor(string:color_model('RGB', 'xyY', 'Lab', 'XYZ', 'HSB'), float:tripel1, float:tripel2, float:tripel3, float:brightness, float:quality, boolean:const_brightness) -> integer:flag
+GetPresetData(light_userdata:preset_handle[, boolean:phasers_only(default=false)[, boolean:by_fixtures(default=true)]]) -> table:phaser_data
+GetObject(string:address) -> string:address[, {['selected_as_default'=boolean:enabled], ['reverse_order'=boolean:enabled]}
+IsObjectValid(boolean:valid) -> string:file_name, table:export_data
+HookObjectChange(function:callback, light_userdata:handle, light_userdata:plugin_handle[, light_userdata:target]) -> integer:hook_id
+PrepareWaitObjectChange(light_userdata:handle[ ,integer:change_level_threshold]) -> boolean:true or nothing
+UnhookMultiple(function:callback(can be nil), light_userdata:handle to target(can be nil), light_userdata:handle to context (can be nil)) -> integer:amount of removed hooks
+GetPath(string:path_type or integer:path_type(Enums.PathType)[ ,boolean:create]) -> string:path
+GetPathType(light_userdata:target_object[ ,integer:content_type (Enums.PathContentType)]) -> string:path_type_name
+GetPathOverrideFor(string:path_type or integer:path_type(Enums.PathType), string:path[ ,boolean:create]) -> string:overwritten_path
+DirList(string:path[ ,string:filter]) -> table of {name:string, size:int, time:int}
+StartProgress(string:name) -> integer:progressbar_index
+GetPropertyColumnId(light_userdata:handle, string:property_name) -> integer:column_id
+GetAttributeColumnId(light_userdata:handle, light_userdata:attribute) -> integer:display_index, string:type('press', 'char', 'release')[ ,string:char(for type 'char') or string:keycode, boolean:shift, boolean:ctrl, boolean:alt, boolean:numlock]
+FindBestDMXPatchAddr(light_userdata:patch, integer:starting_address, integer:footprint) -> integer:absolute_address
+CheckDMXCollision(light_userdata:dmx_mode, string:dmx_address[ ,integer:count[ ,integer:break_index]]) -> boolean:no_collision_found
+GetDMXValue(integer:address[ ,integer:universe, boolean:mode_percent]) -> integer:dmx_value
+GetDMXUniverse(integer:universe[ ,boolean:modePercent]) -> {integer:dmx_values}
+GetButton(light_userdata:usb_device_object_handle) -> table of boolean:state
+CreateUndo(string:undo_text) -> light_userdata:undo_handle
+CreateMultiPatch({light_userdata:fixture_handles}, integer:count[ ,string:undo_text]) -> integer:amount_of_multi-patch_fixtures_created
+PluginVars([string:plugin_name]) -> light_userdata:plugin_preferences
+AddonVars(string:addon_name) -> light_userdata:addon_variables
+GetTextScreenLineCount([integer:starting internal line number]) -> integer:line count
+GetSample(string:type('MEMORY', 'CPU', 'CPUTEMP', 'GPUTEMP', 'SYSTEMP', 'FANRPM')) -> integer:current_value_in_percent
+AddFixtures({'mode'=light_userdata:dmx_mode, 'amount'=integer:amount[, 'undo'=string:undo_text][, 'parent'=light_userdata:handle][, 'insert_index'=integer:value][, 'idtype'=string:idtype][, 'cid'=string:cid][, 'fid'=string:fid][, 'name'=string:name][, 'layer'=string:layer][, 'class'=string:class][, 'patch'={table 1..8: string:address}]}) -> boolean:success or nothing
+GetClassDerivationLevel(integer:result or nothing) -> light_userdata:handle,boolean:with_name[, boolean:use_visible_addr]
+Addr(light_userdata:handle[, light_userdata:base_handle[, boolean:force_parent-based_address[, boolean:force_commandline_index-based_address]]]) -> string:numeric_root_address
+AddrNative(light_userdata:handle, light_userdata:base_handle[, boolean:escape_names]]) -> integer:index
+Compare(light_userdata:handle, light_userdata:handle) -> boolean:is_equal, string:what_differs
+CurrentChild(light_userdata:current_child or nothing) -> light_userdata:handle, integer:child_index(1-based)[, string:class[, light_userdata:undo]]
+Aquire(light_userdata:handle, integer:child_index(1-based)[, light_userdata:undo]) -> light_userdata:handle, integer:child_index(1-based)[, string:class[, light_userdata:undo[, integer:count]]]
+HasParent(light_userdata:handle, handle:object_to_check) -> light_userdata:handle, string:change_level_enum_name
+PropertyName(light_userdata:handle, integer:property_index) -> string:property_name
+FindParent(light_userdata:search_start_handle, string:search_class_name) -> light_userdata:found_handle
+FindWild(light_userdata:search_start_handle, string:search_name) -> light_userdata:handle, string:file_path, string:file_name
+GetLineAt(light_userdata:handle, integer:line_number) -> string:line_content

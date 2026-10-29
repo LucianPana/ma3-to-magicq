@@ -81,6 +81,7 @@ class HeadDef:
     pan_deg: int = 540
     tilt_deg: int = 270
     source: str = ""  # where it came from (GDTF file, MagicQ library name)
+    candidates: list[str] = field(default_factory=list)  # grandMA3 library files that may match (ma3/libmatch.py)
 
     @property
     def key(self) -> str:
@@ -120,6 +121,7 @@ class Palette:
     name: str
     values: dict[tuple[int, int], int] = field(default_factory=dict)  # (fid, chan offset) -> 0..255
     rgb: Optional[tuple[float, float, float]] = None                   # for colour palettes, 0..1
+    ref: Optional[tuple[str, int]] = None                              # source id, e.g. ("col", 8) for MagicQ F,b008
 
 
 @dataclass
@@ -136,6 +138,8 @@ class Cue:
     follow: Optional[float] = None   # seconds after the previous cue, None = wait for Go
     timecode: Optional[float] = None  # seconds
     notes: list[str] = field(default_factory=list)
+    refs: dict[tuple[int, int], tuple[str, int]] = field(default_factory=dict)  # (fid, offset) -> palette ref the value came from
+    fx: int = 0                       # number of effects attached in the source (not converted)
 
 
 @dataclass
@@ -144,6 +148,7 @@ class CueStack:
     cues: list[Cue]
     chase: bool = False
     chase_speed: float = 2.0  # seconds per step when chase
+    tracking: Optional[bool] = None   # None = unknown, console default
 
 
 @dataclass
@@ -176,3 +181,9 @@ class Show:
             if f.fid == fid:
                 return f
         raise KeyError(fid)
+
+    def palette(self, ref: tuple[str, int]) -> Optional[Palette]:
+        for p in self.palettes:
+            if p.ref == ref:
+                return p
+        return None
