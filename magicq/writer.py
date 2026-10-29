@@ -78,9 +78,9 @@ def p_record(idx: int, head: HeadDef) -> shwfile.Record:
     for i, c in enumerate(chans):
         for r in c.ranges:
             lines.append(f"{h(i)},{q(r.name)},{h(r.lo & 0xff)},{h(r.hi & 0xff)},0000,00000000,")
-    # no built-in palettes, no macros
+    # no built-in palettes, no macros; the next line has one word per channel plus one per macro
     lines.append("00000000,")
-    lines.append(",".join(["00000000"] * 21) + ",")
+    lines.append(",".join(["00000000"] * len(chans)) + ",")
     lines.append('"",00000000,0000,0000,0000,0000,0000,')
     for c in chans:
         lines.append(_chan_locate_line(c))
@@ -96,7 +96,7 @@ def p_record(idx: int, head: HeadDef) -> shwfile.Record:
         "3,5,1,0,1f0e,105,3,73,e6,0,0," if is_moving else "0,0,0,0,0,0,0,0,0,0,0,",
         "105,1,f," if is_moving else "0,0,0,",
         "0,",
-        "00000001,00000001,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,0000,",
+        ("00000001,00000001,0000," if is_moving else "00000000,00000000,0000,") + ",".join(["0000"] * len(chans)) + ",",
         f"0000,0000,0000,00000003,{h(int(time.time()), 8)},0,",
         q(short) + ",",
         "0,",
@@ -201,7 +201,7 @@ def f_record(kind: str, idx: int, pal: Palette, show: Show) -> shwfile.Record:
             rows[17] = f"{int(g * 255):x},0,1,"
             rows[18] = f"{int(b * 255):x},0,1,"
             rows[19] = "600,0,1,"
-        rows[-1] = rows[-1][:-1] + ";"
+        rows.append("0,0,0,;")
         lines += rows
     else:
         lines.append("0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0000,00000000,")
@@ -217,13 +217,12 @@ def s_record(idx: int, cue: Cue, show: Show) -> shwfile.Record:
     pairs = []
     for (fid, off), val in sorted(cue.values.items(), key=lambda kv: (show.fixture(kv[0][0]).abs_chan, kv[0][1])):
         pairs += [f"{show.fixture(fid).abs_chan + off:x}", f"{val & 0xff:x}"]
-    fi = tu(cue.fade)
-    fo = tu(cue.fade_out, cue.fade)
-    fp = tu(cue.fade_pos, cue.fade)
-    fc = tu(cue.fade_col, cue.fade)
-    fb = tu(cue.fade_beam, cue.fade)
-    d = tu(cue.delay)
-    times = f"{h(fi)},{h(fo)},{h(fp)},{h(fc)},{h(fb)},{h(d)},{h(d)},{h(d)},{h(d)},{h(d)},"
+    ms = lambda s, d=None: h(max(0, min(0xFFFFFFFF, int(round(((d if s is None else s) or 0.0) * 1000)))), 8)
+    fades = [ms(cue.fade), ms(cue.fade_out, cue.fade), ms(cue.fade_pos, cue.fade), ms(cue.fade_col, cue.fade), ms(cue.fade_beam, cue.fade)]
+    delays = [ms(cue.delay)] * 5
+    # the 10 short words are derived by MagicQ from the millisecond table below; it zeroes
+    # them when they do not match, so leave them zero and let MagicQ fill them in
+    times = ",".join(["0000"] * 10) + ","
     lines = [f"S,{h(idx)},{q(cue.name)},{len(pairs) // 2:x},0,0,", times]
     lines += wrap(pairs, 60) or [""]
     lines += [
@@ -232,7 +231,7 @@ def s_record(idx: int, cue: Cue, show: Show) -> shwfile.Record:
         "00000000,",
         "00000004,",
         "0000,0000,0000,0000,",
-        ",".join(["00000000"] * 14) + ",",
+        ",".join(fades + delays + ["00000000"] * 4) + ",",
         "",
         "00000000,;",
         "",
@@ -256,7 +255,9 @@ def c_record(idx: int, stack: CueStack, first_s: int, show: Show) -> shwfile.Rec
     lines += [
         "00000000,",
         "00000000,0000,0000,0000,0000,",
-        "00000000,",
+    ]
+    lines += ["00000000,"] * n          # one word per cue
+    lines += [
         "0000,00000000,0100,0100,00000000,",
         f"{h(idx - 1, 8)},00000f00,0000,0000,",
         "0000,0000,000a,",

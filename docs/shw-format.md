@@ -28,8 +28,23 @@ P,<idx>,"<Manufacturer>_<Model>_<Mode>","<Manufacturer>","<Mode>","<Model>",
 <chan>,"<range name>",<min>,<max>,<flags>,<icon>,   one per range
 "<palette>",<type>,<?>,<icon>,<chan>,<val>,...      one per built-in palette
 "<macro>",<n>, then n+1 short lines                  one per macro
-... vis and library data (see a sample), ends with ;
+00000000,
+<nchans + nmacros words>,                     MagicQ reads exactly this many
+"",00000000,0000,0000,0000,0000,0000,
+<flags>,<locate>,<lowlight>,<highlight>,      one line per channel (0x100 = no level)
+"<short name>",
+0000,"<capture name>","<manufacturer>","<model>",0000 x5,00000000,
+<icon>,
+"","","",
+six floats (vis dimensions),
+"<wysiwyg name>",0000,
+vis lines (3), 0,
+<2 flags>,0000,<nchans words>,
+0000,0000,0000,00000003,<unix time>,0,
+"<short name>", 0, "{guid}", 1.000000,0000,0000, 0000, two float lines, [0,] ;
 ```
+
+The line counts matter: MagicQ reads fields sequentially, so a line with the wrong number of words shifts everything after it (it then writes back names as `"0000"`). The two variable lines (`nchans + nmacros` words, and `3 + nchans` words) were found by writing heads with different channel counts.
 
 The whole head definition is embedded, so a show is self-contained: the MagicQ head library is not needed to open it. Attribute numbers are the ones from the manual's Head Editor table (Intensity 0, Shutter 2, Iris 3, Pan 4, Tilt 5, Col1 6, Col2 7, Gobo1 8, Gobo2 9, Rotate1 10, Rotate2 11, Focus 12, Zoom 13, FX1 14, FX2 15, Cyan/Red 16, Magenta/Green 17, Yellow/Blue 18, White 19, Cont1 20, Cont2 21, Macro 22, CTC 24, CTO 25, Col Speed 26, Amber 27, Gobo3 28, Gobo4 29, Rotate3 30, Prism Rot 31, Frost1 32, Frost2 33, FX3..FX8 34..39, Beam Speed 40, Cont4..Cont8 41..45, Pos1..Pos5 46..50, Pos Speed 51, Frame1..8 52..59, Lime/UV 60, Col5 61, Col6 62).
 
@@ -68,6 +83,8 @@ S,<id>,"<name>",<nvalues>,<nfx>,<?>,
 
 Value: low byte is the 8-bit level; the upper bits reference the palette the value came from (`a00a69` = position palette 0x0a, level 0x69; `b00dff` = colour palette 0x0d, level 0xff). 16-bit attributes are two entries (coarse and fine channels). Confirmed by round trip: a cue with `1,80,2,ff,3,40` comes back unchanged.
 
+Times (confirmed by round trip on 2026-10-29): the tail has a 14-word line of 32-bit values in **milliseconds**: fade in, fade out, position fade, colour fade, beam fade, then the five matching delays, then four zero words. MagicQ quantises to 30 ms ticks and derives the 10 short words after the header from it (`ticks = ms / 30`, and it rewrites the ms as `30 * ticks + 1`): writing 2000 ms gives `0042` and `000007bd`. Write the ms line and leave the 10 words zero. The 4-word line before it (`0000,0000,<fade>,<fade>` or `<delay>,<delay>,0000,0000`) is derived too.
+
 FX block: `<fx type>,<nchans>,<W idx>,0000,0000,<size>,0000,<speed>,0001,0000,0000,0000,` then one line per channel `<abs chan>,<size>,0,<speed>,<part>,<offset>,<flags>`.
 
 ### `C` cue stack
@@ -79,7 +96,11 @@ C,<id>,"<name>",0000,<ncues>,<flags>,
 ... options, ends with the ;-line
 ```
 
-Header flags `0000a01f` for a normal stack, `00078001`/`00060001`/`00078003` on chases. Cue-line flags `00006000` normal, `00007200` in chases. `003c` = 60 is the default fade (3.00 s in 1/20 s), `000007d0` = 2000 is likely the chase speed in ms. Per-cue times still to be located (candidates: the 10 words in `S`, the `S` tail).
+Header flags `0000a01f` for a single-cue stack, `0000801f` for a multi-cue stack in cue timing mode, `00078001`/`00060001`/`00078003` on chases. Cue-line flags `00006000` normal, `00007200` in chases. The options line is copied from the Y defaults (`000007d0` = 2000 ms chase speed, `003c` default fades). After the cue lines come the 5-word line and then **one `00000000,` line per cue**, then the option lines. MagicQ fills the `<?>,00000f00` word itself.
+
+### `F` tails
+
+Position palettes: `05000001`, `00000007`, `0000`, float line, `0,0,;`. Beam: `0200006d`, `00000003`, `0000`, float line, `0,0,;`. Intensity: icon word, `00000001`, `0000`, float line, `0,0,;`. Colour: `06000026`, `00000025`, `0100`, the CIE xy float line, then 64 rows `a,b,c,` (row 0 `1,40,0`, rows 16..19 the RGB preview) and a final `0,0,0,;`.
 
 ### `M` page and `N` playback
 

@@ -242,20 +242,73 @@ local function dumpSequences(universes)
   return seqs
 end
 
+-- FIDs of the current selection (after "Group n" or "Fixture x Thru y")
+local function selectedFids()
+  local fids, seen = {}, {}
+  local ok, idx = pcall(SelectionFirst)
+  if not ok then return fids end
+  local guard = 0
+  while idx and guard < 100000 do
+    guard = guard + 1
+    local oks, sub = pcall(GetSubfixture, idx)
+    if oks and sub then
+      local fid = prop(sub, "FID")
+      local parent = sub
+      local hops = 0
+      while (fid == nil or fid == 0) and parent and hops < 5 do
+        local okp, par = pcall(function() return parent:Parent() end)
+        parent = okp and par or nil
+        if parent then fid = prop(parent, "FID") end
+        hops = hops + 1
+      end
+      if fid and fid ~= 0 and not seen[fid] then seen[fid] = true; fids[#fids + 1] = fid end
+    end
+    local okn, nxt = pcall(SelectionNext, idx)
+    idx = okn and nxt or nil
+  end
+  return fids
+end
+
 local function dumpGroups()
   local groups = {}
   local ok, pool = pcall(function() return DataPool().Groups end)
   if not ok or not pool then return groups end
   for _, g in ipairs(children(pool)) do
     local name = prop(g, "Name")
-    if name and name ~= "" then
-      groups[#groups + 1] = { no = prop(g, "No"), name = name }
+    local no = prop(g, "No")
+    if name and name ~= "" and no then
+      pcall(Cmd, "ClearAll")
+      pcall(Cmd, string.format("Group %s", tostring(no)))
+      local members = selectedFids()
+      groups[#groups + 1] = { no = no, name = name, members = members }
     end
   end
+  pcall(Cmd, "ClearAll")
   return groups
 end
 
-local function dumpPresetPools()
+local function dumpPages()
+  local pages = {}
+  local ok, pool = pcall(function() return DataPool().Pages end)
+  if not ok or not pool then return pages end
+  for _, pg in ipairs(children(pool)) do
+    local execs = {}
+    for _, ex in ipairs(children(pg)) do
+      local okO, obj = pcall(function() return ex.Object end)
+      if okO and obj then
+        local cls = ""
+        pcall(function() cls = tostring(obj:GetClass()) end)
+        if cls == "" or cls:find("Sequence") then
+          execs[#execs + 1] = { no = prop(ex, "No"), name = prop(ex, "Name"), seq = prop(obj, "No"), seqname = prop(obj, "Name") }
+        end
+      end
+    end
+    pages[#pages + 1] = { no = prop(pg, "No"), name = prop(pg, "Name"), executors = execs }
+  end
+  return pages
+end
+
+local function dumpPresetPools(universes)
   local pools = {}
   local ok, root = pcall(function() return DataPool().PresetPools end)
   if not ok or not root then return pools end
@@ -264,16 +317,22 @@ local function dumpPresetPools()
     local items = {}
     for _, p in ipairs(children(pool)) do
       local name = prop(p, "Name")
-      if name and name ~= "" then
-        local data = nil
-        local okd, d = pcall(GetPresetData, p)
-        if okd then data = d end
-        items[#items + 1] = { no = prop(p, "No"), name = name, data = data }
+      local no = prop(p, "No")
+      if name and name ~= "" and no then
+        -- apply the preset to every fixture in the programmer and read the output
+        pcall(Cmd, "ClearAll")
+        pcall(Cmd, "Fixture Thru")
+        pcall(Cmd, string.format("At Preset %d.%s", i, tostring(no)))
+        coroutine.yield(SNAPSHOT_SETTLE)
+        local snap = snapshotDMX(universes)
+        pcall(Cmd, "ClearAll")
+        items[#items + 1] = { no = no, name = name, dmx = snap }
       end
     end
     pools[#pools + 1] = { index = i, name = pname, presets = items }
     exportCmd(string.format("Preset %d.*", i), string.format("presets_%02d_%s", i, pname:gsub("[^%w]", "_")))
   end
+  pcall(Cmd, "ClearAll")
   return pools
 end
 
@@ -301,9 +360,16 @@ local function main()
     exportCmd(string.format('FixtureType "%s" /GDTF', name), "fixturetypes/" .. safe)
   end
 
+  -- quiet state: nothing running, programmer empty, read the defaults
+  pcall(Cmd, "Off Sequence Thru /NoConfirm")
+  pcall(Cmd, "ClearAll")
+  coroutine.yield(SNAPSHOT_SETTLE)
+  local baseline = snapshotDMX(universes)
+
   local groups = dumpGroups()
-  local presets = dumpPresetPools()
+  local presets = dumpPresetPools(universes)
   local sequences = dumpSequences(universes)
+  local pages = dumpPages()
 
   local dump = {
     generator = "ma3-to-magicq dump_show.lua",
@@ -311,9 +377,11 @@ local function main()
     show = tostring(prop(Root().ShowData, "Name") or ""),
     universes = universes,
     fixtures = fixtures,
+    baseline = baseline,
     groups = groups,
     presetpools = presets,
     sequences = sequences,
+    pages = pages,
   }
   writeFile(OUT_DIR .. "/dump.json", toJson(dump))
   log("done: %d fixtures, %d groups, %d sequences", #fixtures, #groups, #sequences)
