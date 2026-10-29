@@ -1,44 +1,61 @@
 # ma3-to-magicq
 
-Converts a grandMA3 show into a native ChamSys MagicQ show file (`.shw`) that a MagicQ console or MagicQ PC opens directly. Patch, groups, palettes, cue stacks with values and times, pages and playbacks come across. Effects, recipes, phasers, macros and layouts do not (see `docs/shw-format.md` and the conversion report).
+**Open a grandMA3 show on a ChamSys MagicQ.**
 
-Nothing like this exists from either vendor: MagicQ only imports MVR patches and USITT dimmer cues, and the `.shw` format is undocumented. The format notes in `docs/shw-format.md` were reverse-engineered from sample shows and confirmed by writing records by hand and letting MagicQ PC load and rewrite them.
+You programmed the show on a grandMA3. The venue has a MagicQ. Until now that meant one thing: start again from an empty desk. This tool takes the grandMA3 show and writes a real MagicQ show file (`.shw`) that the console opens like any other show, with the patch, the groups, the palettes and the cue lists already in it.
 
-## Workflow
+No manufacturer offers this. Both file formats are undocumented. This project figured out the MagicQ one and uses the grandMA3's own scripting to read the other.
 
-1. **Dump the show in grandMA3 onPC** (2.x, this Mac has 2.3.2). Load the show, then in the command line type
+> **Status: experimental.** It works on test shows against MagicQ PC. It has not yet been run on a real-world grandMA3 show, and it will need a few corrections when it is. If you try it, tell us what happened, good or bad.
 
-       Lua "dofile('/Users/lucianpana/Personal/ma3-to-magicq/ma3/dump_show.lua')()"
+## What comes across
 
-   or import `ma3/dump_show.lua` into the Plugin pool and run it. It writes `~/ma3dump/` (`dump.json`, `fixturetypes/*.xml`, the XML exports). It plays every cue once with zero fade to read the DMX output, switches all sequences off at the end and changes nothing in the show. Do not save the show afterwards if you want to be sure.
+| From the grandMA3 | On the MagicQ |
+|---|---|
+| Fixtures, DMX addresses, 3D positions | Patched heads, built from the fixture's GDTF so no library matching is needed |
+| Groups | Groups |
+| Presets (dimmer, position, colour, gobo, beam, focus) | Intensity, position, colour and beam palettes |
+| Sequences and cues, with fade and delay times | Cue stacks and cues with the same values and times |
+| Executors and pages | Playbacks and pages |
 
-2. **Convert**
+What does not come across, and is listed for you in a report after every conversion: effects and phasers (the cue keeps a still frame of them), recipes (resolved to plain values), macros, layouts, worlds, timecode triggers (flagged so you can set them by hand).
 
-       python3 convert.py ~/ma3dump out/myshow.shw
+The result is a show you finish on the MagicQ in an hour, not one you rebuild in a day.
 
-   writes the show and `out/myshow-report.md` with everything that was approximated or dropped.
+## How to use it
 
-3. **Load on MagicQ**: copy the `.shw` into the console's show folder (or `~/Documents/MagicQ/show` for MagicQ PC) and Setup > Load Show. Read the report, check one cue's times, the heads' attribute wheels, and the playback layout.
+You need: the grandMA3 show (open in grandMA3 onPC, which is free, or on the console), Python 3 on your computer, and a MagicQ or MagicQ PC (also free).
 
-## How it works
+**1. Dump the show on the grandMA3.** Load the show in onPC or on the console. In the command line type:
 
-- `ma3/dump_show.lua` reads the patch, groups (through the selection), presets and cues (through DMX snapshots: the MA3 output is what the cue really does, with tracking, presets and recipes resolved) and exports the fixture types as XML.
-- `ma3/fixturetypes.py` turns a grandMA3 fixture type XML or a GDTF into a MagicQ head: channel kinds, attribute numbers (`data/gdtf_to_magicq.csv`), defaults and named ranges. Attributes MagicQ cannot hold twice in one head go to spare attribute numbers; pixel cells beyond the first are patched as placeholders.
-- `ma3/reader.py` builds the console-neutral `model`, `magicq/writer.py` emits the `.shw` on top of a template MagicQ PC 1.9.7.4 wrote itself (`templates/empty-1.9.7.4.shw`).
-- `scripts/mq_roundtrip.py` loads a file into MagicQ PC without touching its GUI (MagicQ loads the show named in `status.dat` at start and writes it back as `.sbk`) and returns MagicQ's rewrite; `scripts/demo_show.py` and `scripts/fake_dump.py` build synthetic shows for it.
+```
+Lua "dofile('<path to this folder>/ma3/dump_show.lua')()"
+```
 
-## Status (2026-10-29)
+(or import `ma3/dump_show.lua` into the Plugin pool and press it). It writes a folder `ma3dump` in your home directory. It plays each cue once silently to read what the cue really outputs, then switches everything off. It changes nothing in the show.
 
-Verified with MagicQ PC 1.9.7.4 on this Mac: generated shows with generated heads (1 and 52 channels), patch on two universes, groups, the four palette kinds, cues with values and millisecond fade and delay times, multi-cue stacks, a page and playbacks all load and come back from MagicQ unchanged apart from fields it derives itself.
+**2. Convert.** In a terminal, in this folder:
 
-Not yet run against a real grandMA3 show: `dump_show.lua` is written against the documented Lua API and syntax-checked, but the first real run in onPC will show which property names differ. Driving onPC from this machine needs the Terminal app granted Accessibility (System Settings > Privacy & Security > Accessibility); without it a person has to start the plugin.
+```
+python3 convert.py ~/ma3dump myshow.shw
+```
 
-To confirm by eye on MagicQ (not readable from the file): the fade unit on a cue (written as milliseconds, expected to show as seconds), the cue-timing versus chase mode of multi-cue stacks (flag `0000801f`), and the vis entries of generated heads.
+You get `myshow.shw` and `myshow-report.md`.
 
-## Development
+**3. Load on the MagicQ.** Copy `myshow.shw` to the console (USB stick, or `Documents/MagicQ/show` on MagicQ PC), then Setup, Load Show. Open the report next to it and check the things it points out.
 
-    python3 -m venv .venv && .venv/bin/pip install pytest
-    .venv/bin/python -m pytest -q
-    python3 scripts/demo_show.py out/demo.shw --roundtrip      # needs MagicQ PC installed
+## Why trust the file
 
-Sample shows (third-party MQ50 shows, ChamSys demos, the grandMA3 demo shows) live in `samples/`, which is not committed.
+The MagicQ format was worked out by writing records by hand and having MagicQ PC load them and write them back, over and over, until what came back matched what went in. Patch, groups, palettes, cues, times, stacks and playbacks all survive that round trip. The notes are in `docs/shw-format.md`, which is, as far as we know, the first public description of the MagicQ show file.
+
+## Who this is for
+
+Small venues, rental houses, schools, churches and freelancers who get a grandMA3 file and have a MagicQ in the room, or who are moving from one desk to the other and have a season of shows programmed. If you run a 300-fixture arena tour you will keep programming per console, and you should.
+
+## Help wanted
+
+- Run it on your show and open an issue with the report and what the MagicQ showed. The first real shows will teach the tool the most.
+- Attribute mappings for fixture types that come out odd live in `data/gdtf_to_magicq.csv`, one line per attribute, easy to fix.
+- The other direction (MagicQ to grandMA3) and other desks are possible on the same core. Say so if you want them.
+
+Technical details, how the pieces fit and how to develop: `docs/development.md`. MIT licence.
