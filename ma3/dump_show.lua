@@ -18,6 +18,15 @@ local MAX_CUES = 2000
 
 local function log(fmt, ...) Printf("[ma3dump] " .. fmt, ...) end
 
+-- Sleep that works both inside a plugin coroutine and from a bare Lua command.
+local function sleep(seconds)
+  local ok = pcall(coroutine.yield, seconds)
+  if not ok then
+    local t0 = os.clock()
+    while os.clock() - t0 < seconds do end
+  end
+end
+
 local function mkdir(path)
   os.execute(string.format('mkdir -p "%s"', path))
 end
@@ -231,12 +240,12 @@ local function dumpSequences(universes)
   pcall(Cmd, "ClearAll")
   for _, s in ipairs(seqs) do
     for _, c in ipairs(s.cues) do
-      pcall(Cmd, string.format("Goto Cue %s Sequence %s Fade 0", tostring(c.no), tostring(s.no)))
-      coroutine.yield(SNAPSHOT_SETTLE)
+      pcall(Cmd, string.format("Goto Sequence %s Cue %s Fade 0", tostring(s.no), tostring(c.no)))
+      sleep(SNAPSHOT_SETTLE)
       c.dmx = snapshotDMX(universes)
     end
     pcall(Cmd, string.format("Off Sequence %s /NoConfirm", tostring(s.no)))
-    coroutine.yield(0.05)
+    sleep(0.05)
   end
   pcall(Cmd, "Off Sequence Thru /NoConfirm")
   return seqs
@@ -323,7 +332,7 @@ local function dumpPresetPools(universes)
         pcall(Cmd, "ClearAll")
         pcall(Cmd, "Fixture Thru")
         pcall(Cmd, string.format("At Preset %d.%s", i, tostring(no)))
-        coroutine.yield(SNAPSHOT_SETTLE)
+        sleep(SNAPSHOT_SETTLE)
         local snap = snapshotDMX(universes)
         pcall(Cmd, "ClearAll")
         items[#items + 1] = { no = no, name = name, dmx = snap }
@@ -363,7 +372,7 @@ local function main()
   -- quiet state: nothing running, programmer empty, read the defaults
   pcall(Cmd, "Off Sequence Thru /NoConfirm")
   pcall(Cmd, "ClearAll")
-  coroutine.yield(SNAPSHOT_SETTLE)
+  sleep(SNAPSHOT_SETTLE)
   local baseline = snapshotDMX(universes)
 
   local groups = dumpGroups()
